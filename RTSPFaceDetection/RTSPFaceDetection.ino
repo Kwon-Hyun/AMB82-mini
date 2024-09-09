@@ -2,9 +2,8 @@
 #include "StreamIO.h"
 #include "VideoStream.h"
 #include "RTSP.h"
-#include "NNObjectDetection.h"
+#include "NNFaceDetection.h"
 #include "VideoStreamOverlay.h"
-#include "ObjectClassList.h"
 
 #define CHANNEL   0
 #define CHANNELNN 3
@@ -15,13 +14,13 @@
 
 VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
 VideoSetting configNN(NNWIDTH, NNHEIGHT, 10, VIDEO_RGB, 0);
-NNObjectDetection ObjDet;
+NNFaceDetection facedet;
 RTSP rtsp;
 StreamIO videoStreamer(1, 1);
 StreamIO videoStreamerNN(1, 1);
 
-char ssid[] = "LAB2M_101_5G";    // 지금은 LAB2M_101_5G 회사 와파
-char pass[] = "L2M_pw";        // L2M WIFI password 비밀..
+char ssid[] = "LAB2M_101_5G";    // LAB2M_101_5G 회사 와파
+char pass[] = "L2M-pw";        // 회사 와파 비번 비-밀ㅋㅋ
 int status = WL_IDLE_STATUS;
 
 IPAddress ip;
@@ -29,7 +28,7 @@ int rtsp_portnum;
 
 void setup()
 {
-    Serial.begin(115200);   // 출력 시 Serial num 115200 맞춰야 깨짐 없이 출력됨.
+    Serial.begin(115200);   // Serial num 통일
 
     // attempt to connect to Wifi network:
     while (status != WL_CONNECTED) {
@@ -54,11 +53,12 @@ void setup()
     rtsp.begin();
     rtsp_portnum = rtsp.getPort();
 
-    // Configure object detection with corresponding video format information
+    // Configure face detection with corresponding video format information
     // Select Neural Network(NN) task and models
-    ObjDet.configVideo(configNN);
-    ObjDet.modelSelect(OBJECT_DETECTION, DEFAULT_YOLOV4TINY, NA_MODEL, NA_MODEL);
-    ObjDet.begin();
+    facedet.configVideo(configNN);
+    facedet.setResultCallback(FDPostProcess);
+    facedet.modelSelect(FACE_DETECTION, NA_MODEL, DEFAULT_SCRFD, NA_MODEL);
+    facedet.begin();
 
     // Configure StreamIO object to stream data from video channel to RTSP
     videoStreamer.registerInput(Camera.getStream(CHANNEL));
@@ -70,11 +70,11 @@ void setup()
     // Start data stream from video channel
     Camera.channelBegin(CHANNEL);
 
-    // Configure StreamIO object to stream data from RGB video channel to object detection
+    // Configure StreamIO object to stream data from RGB video channel to face detection
     videoStreamerNN.registerInput(Camera.getStream(CHANNELNN));
     videoStreamerNN.setStackSize();
     videoStreamerNN.setTaskPriority();
-    videoStreamerNN.registerOutput(ObjDet);
+    videoStreamerNN.registerOutput(facedet);
     if (videoStreamerNN.begin() != 0) {
         Serial.println("StreamIO link start failed");
     }
@@ -89,7 +89,13 @@ void setup()
 
 void loop()
 {
-    std::vector<ObjectDetectionResult> results = ObjDet.getResult();
+    // Do nothing
+}
+
+// User callback function for post processing of face detection results
+void FDPostProcess(std::vector<FaceDetectionResult> results)
+{
+    int count = 0;
 
     uint16_t im_h = config.height();
     uint16_t im_w = config.width();
@@ -101,35 +107,41 @@ void loop()
     Serial.println(rtsp_portnum);
     Serial.println(" ");
 
-    printf("Total number of objects detected = %d\r\n", ObjDet.getResultCount());
+    printf("Total number of faces detected = %d\r\n", facedet.getResultCount());
     OSD.createBitmap(CHANNEL);
 
-    if (ObjDet.getResultCount() > 0) {
-        for (int i = 0; i < ObjDet.getResultCount(); i++) {
-            int obj_type = results[i].type();
-            if (itemList[obj_type].filter) {    // check if item should be ignored
+    if (facedet.getResultCount() > 0) {
+        for (int i = 0; i < facedet.getResultCount(); i++) {
+            FaceDetectionResult item = results[i];
+            // Result coordinates are floats ranging from 0.00 to 1.00
+            // Multiply with RTSP resolution to get coordinates in pixels
+            int xmin = (int)(item.xMin() * im_w);
+            int xmax = (int)(item.xMax() * im_w);
+            int ymin = (int)(item.yMin() * im_h);
+            int ymax = (int)(item.yMax() * im_h);
 
-                ObjectDetectionResult item = results[i];
-                // Result coordinates are floats ranging from 0.00 to 1.00
-                // Multiply with RTSP resolution to get coordinates in pixels
-                int xmin = (int)(item.xMin() * im_w);
-                int xmax = (int)(item.xMax() * im_w);
-                int ymin = (int)(item.yMin() * im_h);
-                int ymax = (int)(item.yMax() * im_h);
+            // Draw boundary box
+            printf("Face %ld confidence %d:\t%d %d %d %d\n\r", i, item.score(), xmin, xmax, ymin, ymax);
+            OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, OSD_COLOR_WHITE);
 
-                // Draw boundary box
-                printf("Item %d %s:\t%d %d %d %d\n\r", i, itemList[obj_type].objectName, xmin, xmax, ymin, ymax);
-                OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, OSD_COLOR_WHITE);
+            // Print identification text above boundary box
+            char text_str[40];
+            snprintf(text_str, sizeof(text_str), "%s %d", item.name(), item.score());
+            OSD.drawText(CHANNEL, xmin, ymin - OSD.getTextHeight(CHANNEL), text_str, OSD_COLOR_CYAN);
 
-                // Print identification text
-                char text_str[20];
-                snprintf(text_str, sizeof(text_str), "%s %d", itemList[obj_type].objectName, item.score());
-                OSD.drawText(CHANNEL, xmin, ymin - OSD.getTextHeight(CHANNEL), text_str, OSD_COLOR_CYAN);
+            // Draw facial feature points
+            for (int j = 0; j < 5; j++) {
+                int x = (int)(item.xFeature(j) * im_w);
+                int y = (int)(item.yFeature(j) * im_h);
+                OSD.drawPoint(CHANNEL, x, y, 8, OSD_COLOR_RED);
+                count++;
+                if (count == MAX_FACE_DET) {
+                    goto OSDUpdate;
+                }
             }
         }
     }
-    OSD.update(CHANNEL);
 
-    // delay to wait for new results
-    delay(100);
+OSDUpdate:
+    OSD.update(CHANNEL);
 }
