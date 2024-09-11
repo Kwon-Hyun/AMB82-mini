@@ -1,28 +1,3 @@
-/*
-
- Example guide:
- TBD
-
- NN Model Selection
- Select Neural Network(NN) task and models using .modelSelect(nntask, objdetmodel, facedetmodel, facerecogmodel, audclassmodel, imgclassmodel).
- Replace with NA_MODEL if they are not necessary for your selected NN Task.
-
- NN task
- =======
- OBJECT_DETECTION/ FACE_DETECTION/ FACE_RECOGNITION/ AUDIO CLASSIFICATION/ IMAGE CLASSIFICATION
-
- Models
- =======
- YOLOv3 model         DEFAULT_YOLOV3TINY   / CUSTOMIZED_YOLOV3TINY
- YOLOv4 model         DEFAULT_YOLOV4TINY   / CUSTOMIZED_YOLOV4TINY
- YOLOv7 model         DEFAULT_YOLOV7TINY   / CUSTOMIZED_YOLOV7TINY
- SCRFD model          DEFAULT_SCRFD        / CUSTOMIZED_SCRFD
- MobileFaceNet model  DEFAULT_MOBILEFACENET/ CUSTOMIZED_MOBILEFACENET
- YAMNET model         DEFAULT_YAMNET       / CUSTOMIZED_YAMNET
- CNN model            DEFAULT_IMGCLASS     / CUSTOMIZED_IMGCLASS
- No model             NA_MODEL
- */
-
 #include "WiFi.h"
 #include "StreamIO.h"
 #include "VideoStream.h"
@@ -49,8 +24,8 @@ RTSP rtsp;
 StreamIO videoStreamer(1, 1);
 StreamIO videoStreamerNN(1, 1);
 
-char ssid[] = "LAB2M_101_5G";    // your network SSID (name)
-char pass[] = "lab2m2094";        // your network password
+char ssid[] = "LAB2M_101_5G";    // 내 PC와 동일한 와파
+char pass[] = "l2m*******";        // password 비밀이야!!!!
 int status = WL_IDLE_STATUS;
 
 IPAddress ip;
